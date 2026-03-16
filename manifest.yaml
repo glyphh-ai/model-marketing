@@ -1,9 +1,8 @@
 name: Marketing Intelligence
 description: >-
   Encodes campaigns, posts, and audiences as HDC glyphs with continuous
-  performance vectors. Supports semantic search ("find campaigns similar to
-  our product launch"), cross-type matching, and real-time performance
-  tracking via Pipedream webhooks through the listener endpoint.
+  performance vectors. Semantic search, cross-type matching, and real-time
+  performance tracking via webhooks.
 version: 0.1.0
 author: Glyphh AI
 license: MIT
@@ -17,4 +16,4 @@ tags:
   - content
   - audience
   - analytics
-  - pipedream
+  - webhooks
