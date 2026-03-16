@@ -1,6 +1,6 @@
 # Glyphh Marketing — Campaign & Content Intelligence
 
-Encodes campaigns, posts, and audiences as searchable HDC glyphs with continuous performance vectors. Supports semantic search ("find campaigns similar to our product launch"), cross-type matching, and real-time performance tracking via Pipedream webhooks through the listener endpoint.
+Encodes campaigns, posts, and audiences as searchable HDC glyphs with continuous performance vectors. Supports semantic search ("find campaigns similar to our product launch"), cross-type matching, and real-time performance tracking via webhooks through the listener endpoint.
 
 Built on [**Glyphh Ada 1.1**](https://www.glyphh.ai/products/runtime) · **[Docs →](https://glyphh.ai/docs)** · **[Glyphh Hub →](https://glyphh.ai/hub)**
 
@@ -113,12 +113,12 @@ ContinuousProjector projects these float vectors into bipolar HDC space via dete
 
 **Note:** ContinuousProjector is scale-invariant (sign quantization). Vectors that differ only in magnitude project identically — similarity is based on the *pattern* of metrics, not absolute values.
 
-## Real-Time Updates via Pipedream
+## Real-Time Updates via Webhooks
 
-Performance metrics are updated in real-time through Pipedream webhooks → runtime listener endpoint:
+Performance metrics are updated in real-time through webhooks → runtime listener endpoint:
 
 ```
-Pipedream Webhook (click/conversion event)
+Webhook (click/conversion event)
     ↓
 POST /{org_id}/marketing/listener
     Body: {
@@ -233,9 +233,9 @@ The marketing model is an **observation and retrieval layer** — it encodes wha
              │                          │  converts)
              │                          ▼
              │               ┌──────────────────────────────┐
-             │               │   PIPEDREAM WORKFLOWS        │
+             │               │   WEBHOOK WORKFLOWS          │
              │               │                              │
-             │               │  SendGrid webhook → normalize│
+             │               │  Email webhook → normalize   │
              │               │  GA API poll → normalize     │
              │               │  Social API poll → normalize │
              └───────────────│                              │
@@ -249,7 +249,7 @@ The marketing model is an **observation and retrieval layer** — it encodes wha
 2. Model returns ranked campaigns/posts with similarity scores
 3. Agent acts on the insight → creates more content like the top performers
 4. Users engage with the content (clicks, opens, conversions)
-5. Pipedream captures engagement events → normalizes → POSTs to listener
+5. Webhooks capture engagement events → normalize → POST to listener
 6. Model updates glyph performance vectors
 7. Agent queries again → loop continues
 
@@ -291,7 +291,7 @@ The agent uses these results to decide what to do next — replicate top perform
 
 ## Data Pipeline — Event Sources
 
-The model's performance layer stays current through three event sources, all normalized by Pipedream before hitting the listener:
+The model's performance layer stays current through three event sources, all normalized via webhooks before hitting the listener:
 
 ### SendGrid (Email Engagement)
 
@@ -321,7 +321,7 @@ Poll the GA Reporting API (daily or hourly) for UTM-attributed data:
 
 ### Social Platform APIs (Engagement)
 
-Poll platform APIs via Pipedream for social metrics:
+Poll platform APIs for social metrics:
 
 | Platform Metric | Maps To |
 |----------------|---------|
@@ -342,14 +342,14 @@ utm_campaign = {campaign_entity_id}     # matches exemplar entity_id
 utm_content  = {post_entity_id}         # matches post entity_id
 ```
 
-The `utm_campaign` and `utm_content` values should match your exemplar `entity_id` fields so Pipedream can route engagement data back to the correct glyph.
+The `utm_campaign` and `utm_content` values should match your exemplar `entity_id` fields so webhooks can route engagement data back to the correct glyph.
 
-### Pipedream Workflow Structure
+### Webhook Workflow Structure
 
-Set up one Pipedream workflow per event source:
+Set up one webhook workflow per event source:
 
 ```
-Workflow 1: SendGrid Events
+Workflow 1: Email Events
   Trigger: SendGrid webhook
   → Extract utm_campaign, utm_content from link URL
   → Aggregate metrics by entity_id
