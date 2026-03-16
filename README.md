@@ -215,7 +215,7 @@ The marketing model is an **observation and retrieval layer** — it encodes wha
 │                                                          │
 │  Queries the model via MCP to inform decisions:          │
 │  "which campaigns have highest engagement?"              │
-│  "what content works for technical audiences?"            │
+│  "what content works for technical audiences?"           │
 │  "find campaigns similar to our best performer"          │
 └────────────┬─────────────────────────┬───────────────────┘
              │ MCP nl_query            │ Creates content
@@ -223,25 +223,25 @@ The marketing model is an **observation and retrieval layer** — it encodes wha
 ┌────────────────────────┐   ┌─────────────────────────────┐
 │   GLYPHH RUNTIME       │   │   MARKETING CHANNELS        │
 │                        │   │                             │
-│  Encodes query → HDC   │   │  SendGrid (email)          │
+│  Encodes query → HDC   │   │  SendGrid (email)           │
 │  Cosine search pgvector│   │  Twitter / LinkedIn (social)│
 │  Returns ranked results│   │  Google Ads (paid)          │
-│  with similarity scores│   │  Blog / CMS (content)      │
+│  with similarity scores│   │  Blog / CMS (content)       │
 └────────────────────────┘   └──────────┬──────────────────┘
              ▲                          │ User engages
              │                          │ (clicks, opens,
              │                          │  converts)
              │                          ▼
-             │               ┌─────────────────────────────┐
-             │               │   PIPEDREAM WORKFLOWS       │
-             │               │                             │
+             │               ┌──────────────────────────────┐
+             │               │   PIPEDREAM WORKFLOWS        │
+             │               │                              │
              │               │  SendGrid webhook → normalize│
              │               │  GA API poll → normalize     │
              │               │  Social API poll → normalize │
-             └───────────────│                             │
-              POST /listener │  → POST /{org}/marketing/   │
-                             │    listener                 │
-                             └─────────────────────────────┘
+             └───────────────│                              │
+              POST /listener │  → POST /{org}/marketing/    │
+                             │    listener                  │
+                             └──────────────────────────────┘
 ```
 
 **The closed loop:**
