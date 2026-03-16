@@ -18,13 +18,9 @@ Architecture:
 """
 
 import hashlib
-import os
-import sys
 
 from intent import extract_intent
 
-# SDK imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "glyphh-runtime"))
 from glyphh.core.config import (
     EncoderConfig,
     Layer,
