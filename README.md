@@ -202,7 +202,183 @@ Exemplars in `data/exemplars.jsonl` are pre-built marketing entities:
 }
 ```
 
+## Architecture — Agent + Model Closed Loop
+
+The marketing model is an **observation and retrieval layer** — it encodes what happened and lets you search/compare it. It never creates, sends, or schedules anything. Your LLM agent handles creation; the model handles memory and analytics.
+
+```
+┌──────────────────────────────────────────────────────────┐
+│                    LLM AGENT (Claude)                    │
+│                                                          │
+│  Creates campaigns, writes copy, schedules posts,        │
+│  sends emails, adjusts budgets                           │
+│                                                          │
+│  Queries the model via MCP to inform decisions:          │
+│  "which campaigns have highest engagement?"              │
+│  "what content works for technical audiences?"            │
+│  "find campaigns similar to our best performer"          │
+└────────────┬─────────────────────────┬───────────────────┘
+             │ MCP nl_query            │ Creates content
+             ▼                         ▼
+┌────────────────────────┐   ┌─────────────────────────────┐
+│   GLYPHH RUNTIME       │   │   MARKETING CHANNELS        │
+│                        │   │                             │
+│  Encodes query → HDC   │   │  SendGrid (email)          │
+│  Cosine search pgvector│   │  Twitter / LinkedIn (social)│
+│  Returns ranked results│   │  Google Ads (paid)          │
+│  with similarity scores│   │  Blog / CMS (content)      │
+└────────────────────────┘   └──────────┬──────────────────┘
+             ▲                          │ User engages
+             │                          │ (clicks, opens,
+             │                          │  converts)
+             │                          ▼
+             │               ┌─────────────────────────────┐
+             │               │   PIPEDREAM WORKFLOWS       │
+             │               │                             │
+             │               │  SendGrid webhook → normalize│
+             │               │  GA API poll → normalize     │
+             │               │  Social API poll → normalize │
+             └───────────────│                             │
+              POST /listener │  → POST /{org}/marketing/   │
+                             │    listener                 │
+                             └─────────────────────────────┘
+```
+
+**The closed loop:**
+1. Agent queries the model → "what's working?"
+2. Model returns ranked campaigns/posts with similarity scores
+3. Agent acts on the insight → creates more content like the top performers
+4. Users engage with the content (clicks, opens, conversions)
+5. Pipedream captures engagement events → normalizes → POSTs to listener
+6. Model updates glyph performance vectors
+7. Agent queries again → loop continues
+
+No human in the middle unless you want one. The agent makes data-driven decisions using structured HDC search instead of reasoning over raw spreadsheets.
+
+## MCP Integration
+
+LLM agents query the model via the runtime's MCP tools:
+
+```python
+# Available MCP tools:
+# 1. nl_query — Natural language search
+# 2. gql_query — Structured GQL search
+
+# Example: Agent asks which campaigns are performing well
+POST /{org_id}/marketing/mcp
+{
+    "tool": "nl_query",
+    "arguments": {
+        "query": "find high-converting campaigns for technical audiences"
+    }
+}
+
+# Response:
+{
+    "content": [...],
+    "result": {
+        "matches": [
+            {"entity_id": "product_launch_q1", "score": 0.87},
+            {"entity_id": "webinar_series_devtools", "score": 0.72}
+        ]
+    },
+    "confidence": 0.87,
+    "query_time_ms": 4.2
+}
+```
+
+The agent uses these results to decide what to do next — replicate top performers, shift budget, adjust targeting, write new copy based on what resonated.
+
+## Data Pipeline — Event Sources
+
+The model's performance layer stays current through three event sources, all normalized by Pipedream before hitting the listener:
+
+### SendGrid (Email Engagement)
+
+SendGrid webhooks fire on email events. Map to the model's metrics:
+
+| SendGrid Event | Maps To |
+|---------------|---------|
+| open | engagement_metrics[0] (likes/opens) |
+| click | conversion_metrics[0] (clicks) |
+| bounce / unsubscribe | reach_metrics[3] (growth_rate, negative) |
+
+**UTM params** — Add to every link in your SendGrid templates:
+```
+?utm_source=sendgrid&utm_medium=email&utm_campaign={campaign_slug}&utm_content={post_id}
+```
+
+### Google Analytics (Post-Click Behavior)
+
+Poll the GA Reporting API (daily or hourly) for UTM-attributed data:
+
+| GA Metric | Maps To |
+|-----------|---------|
+| sessions (by utm_campaign) | reach_metrics[0] (impressions) |
+| goal completions | conversion_metrics[1] (signups) |
+| transactions | conversion_metrics[2] (purchases) |
+| unique users | reach_metrics[1] (unique_views) |
+
+### Social Platform APIs (Engagement)
+
+Poll platform APIs via Pipedream for social metrics:
+
+| Platform Metric | Maps To |
+|----------------|---------|
+| likes / favorites | engagement_metrics[0] |
+| shares / retweets | engagement_metrics[1] |
+| comments / replies | engagement_metrics[2] |
+| saves / bookmarks | engagement_metrics[3] |
+| impressions | reach_metrics[0] |
+
+### UTM Convention
+
+Keep UTM naming consistent across all channels to avoid fragmenting your data:
+
+```
+utm_source   = sendgrid | twitter | linkedin | google_ads | blog
+utm_medium   = email | social | paid | content
+utm_campaign = {campaign_entity_id}     # matches exemplar entity_id
+utm_content  = {post_entity_id}         # matches post entity_id
+```
+
+The `utm_campaign` and `utm_content` values should match your exemplar `entity_id` fields so Pipedream can route engagement data back to the correct glyph.
+
+### Pipedream Workflow Structure
+
+Set up one Pipedream workflow per event source:
+
+```
+Workflow 1: SendGrid Events
+  Trigger: SendGrid webhook
+  → Extract utm_campaign, utm_content from link URL
+  → Aggregate metrics by entity_id
+  → POST /{org_id}/marketing/listener
+
+Workflow 2: GA Rollup
+  Trigger: Cron (daily or hourly)
+  → Query GA Reporting API filtered by utm_source
+  → Group by utm_campaign
+  → POST /{org_id}/marketing/listener
+
+Workflow 3: Social Engagement (optional, add later)
+  Trigger: Cron (hourly)
+  → Poll Twitter/LinkedIn API for post metrics
+  → Map to entity_id via post URL or metadata
+  → POST /{org_id}/marketing/listener
+```
+
+Each workflow normalizes platform-specific data into the model's metric format before POSTing to the listener.
+
 ## Use Cases
+
+### Agent-Driven Decisions
+```
+Agent: "Which campaigns should I double down on?"
+→ MCP nl_query: "find high-engagement campaigns"
+→ Model returns: product_launch_q1 (0.87), webinar_devtools (0.72)
+→ Agent creates more content similar to product_launch_q1
+```
 
 ### Find Similar Campaigns
 ```bash
@@ -222,4 +398,9 @@ Exemplars in `data/exemplars.jsonl` are pre-built marketing entities:
 ### Cross-Type Search
 ```bash
 # glyphh> chat "compare email vs social performance"
+```
+
+### Trend Detection
+```bash
+# glyphh> chat "which audience segments engage most this month"
 ```
